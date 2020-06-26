@@ -42,6 +42,9 @@ var log = logf.Log.WithName("watches")
 // The mapping is used to compose an ansible operator.
 type Watch struct {
 	GroupVersionKind            schema.GroupVersionKind   `json:",inline"`
+	Group                       string                    `json:"group"`
+	Version                     string                    `json:"version"`
+	Kind                        string                    `json:"kind"`
 	Blacklist                   []schema.GroupVersionKind `json:"blacklist"`
 	Playbook                    string                    `json:"playbook"`
 	Role                        string                    `json:"role"`
@@ -79,71 +82,6 @@ var (
 	maxWorkersDefault       = 1
 	ansibleVerbosityDefault = 2
 )
-//
-// UnmarshalYAML - implements the yaml.Unmarshaler interface for Watch.
-// This makes it possible to verify, when loading, that the GroupVersionKind
-// specified for a given watch is valid as well as provide sensible defaults
-// for values that were omitted.
-func (w *Watch) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Use an alias struct to handle complex types
-	type alias struct {
-		Group                       string                    `json:"group"`
-		Version                     string                    `json:"version"`
-		Kind                        string                    `json:"kind"`
-		Playbook                    string                    `json:"playbook"`
-		Role                        string                    `json:"role"`
-		Vars                        map[string]interface{}    `json:"vars"`
-		MaxRunnerArtifacts          int                       `json:"maxRunnerArtifacts"`
-		ReconcilePeriod             *metav1.Duration          `json:"reconcilePeriod"`
-		ManageStatus                bool                      `json:"manageStatus"`
-		WatchDependentResources     bool                      `json:"watchDependentResources"`
-		WatchClusterScopedResources bool                      `json:"watchClusterScopedResources"`
-		Blacklist                   []schema.GroupVersionKind `json:"blacklist"`
-		Finalizer                   *Finalizer                `json:"finalizer"`
-	}
-	var tmp alias
-
-	// by default, the operator will manage status and watch dependent resources
-	tmp.ManageStatus = manageStatusDefault
-	// the operator will not manage cluster scoped resources by default.
-	tmp.WatchDependentResources = watchDependentResourcesDefault
-	tmp.MaxRunnerArtifacts = maxRunnerArtifactsDefault
-	tmp.ReconcilePeriod = &reconcilePeriodDefault
-	tmp.WatchClusterScopedResources = watchClusterScopedResourcesDefault
-	tmp.Blacklist = blacklistDefault
-
-	if err := unmarshal(&tmp); err != nil {
-		return err
-	}
-
-	gvk := schema.GroupVersionKind{
-		Group:   tmp.Group,
-		Version: tmp.Version,
-		Kind:    tmp.Kind,
-	}
-	err := verifyGVK(gvk)
-	if err != nil {
-		return fmt.Errorf("invalid GVK: %s: %w", gvk, err)
-	}
-
-	// Rewrite values to struct being unmarshalled
-	w.GroupVersionKind = gvk
-	w.Playbook = tmp.Playbook
-	w.Role = tmp.Role
-	w.Vars = tmp.Vars
-	w.MaxRunnerArtifacts = tmp.MaxRunnerArtifacts
-	w.MaxWorkers = getMaxWorkers(gvk, maxWorkersDefault)
-	w.ReconcilePeriod = tmp.ReconcilePeriod
-	w.ManageStatus = tmp.ManageStatus
-	w.WatchDependentResources = tmp.WatchDependentResources
-	w.WatchClusterScopedResources = tmp.WatchClusterScopedResources
-	w.Finalizer = tmp.Finalizer
-	w.AnsibleVerbosity = getAnsibleVerbosity(gvk, ansibleVerbosityDefault)
-	w.Blacklist = tmp.Blacklist
-	w.addRolePlaybookPaths()
-
-	return nil
-}
 
 // addRolePlaybookPaths will add the full path based on the current dir
 func (w *Watch) addRolePlaybookPaths() {
@@ -286,6 +224,18 @@ func Load(path string, maxWorkers, ansibleVerbosity int) ([]Watch, error) {
 
 	watchesMap := make(map[schema.GroupVersionKind]bool)
 	for _, watch := range watches {
+
+		gvk := schema.GroupVersionKind{
+			Group:   watch.Group,
+			Version: watch.Version,
+			Kind:    watch.Kind,
+		}
+		err := verifyGVK(gvk)
+		if err != nil {
+			return nil, fmt.Errorf("invalid GVK: %s: %w", gvk, err)
+		}
+
+		watch.GroupVersionKind = gvk
 		// prevent dupes
 		if _, ok := watchesMap[watch.GroupVersionKind]; ok {
 			return nil, fmt.Errorf("duplicate GVK: %v", watch.GroupVersionKind.String())
