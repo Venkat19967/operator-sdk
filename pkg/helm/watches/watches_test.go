@@ -65,6 +65,7 @@ func TestLoadReader(t *testing.T) {
   kind: MyKind
   chart: ../../../internal/scaffold/helm/testdata/testcharts/test-chart
   watchDependentResources: false
+  reconcilePeriod: 10s			
   overrideValues:
     key: $MY_VALUE
 `,

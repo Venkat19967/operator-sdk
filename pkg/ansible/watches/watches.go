@@ -24,14 +24,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	// todo(camila): replace it for yaml "sigs.k8s.io/yaml"
 	// See that the unmarshaling JSON will be affected
-	yaml "gopkg.in/yaml.v3"
+	yaml "sigs.k8s.io/yaml"
 
 	"github.com/operator-framework/operator-sdk/internal/util/projutil"
 )
@@ -41,17 +41,17 @@ var log = logf.Log.WithName("watches")
 // Watch - holds data used to create a mapping of GVK to ansible playbook or role.
 // The mapping is used to compose an ansible operator.
 type Watch struct {
-	GroupVersionKind            schema.GroupVersionKind   `yaml:",inline"`
-	Blacklist                   []schema.GroupVersionKind `yaml:"blacklist"`
-	Playbook                    string                    `yaml:"playbook"`
-	Role                        string                    `yaml:"role"`
-	Vars                        map[string]interface{}    `yaml:"vars"`
-	MaxRunnerArtifacts          int                       `yaml:"maxRunnerArtifacts"`
-	ReconcilePeriod             time.Duration             `yaml:"reconcilePeriod"`
-	Finalizer                   *Finalizer                `yaml:"finalizer"`
-	ManageStatus                bool                      `yaml:"manageStatus"`
-	WatchDependentResources     bool                      `yaml:"watchDependentResources"`
-	WatchClusterScopedResources bool                      `yaml:"watchClusterScopedResources"`
+	GroupVersionKind            schema.GroupVersionKind   `json:",inline"`
+	Blacklist                   []schema.GroupVersionKind `json:"blacklist"`
+	Playbook                    string                    `json:"playbook"`
+	Role                        string                    `json:"role"`
+	Vars                        map[string]interface{}    `json:"vars"`
+	MaxRunnerArtifacts          int                       `json:"maxRunnerArtifacts"`
+	ReconcilePeriod             *metav1.Duration          `json:"reconcilePeriod,omitempty"`
+	Finalizer                   *Finalizer                `json:"finalizer"`
+	ManageStatus                bool                      `json:"manageStatus"`
+	WatchDependentResources     bool                      `json:"watchDependentResources"`
+	WatchClusterScopedResources bool                      `json:"watchClusterScopedResources"`
 
 	// Not configurable via watches.yaml
 	MaxWorkers       int `yaml:"-"`
@@ -70,7 +70,7 @@ type Finalizer struct {
 var (
 	blacklistDefault                   = []schema.GroupVersionKind{}
 	maxRunnerArtifactsDefault          = 20
-	reconcilePeriodDefault             = "0s"
+	reconcilePeriodDefault             = metav1.Duration{0}
 	manageStatusDefault                = true
 	watchDependentResourcesDefault     = true
 	watchClusterScopedResourcesDefault = false
@@ -79,7 +79,7 @@ var (
 	maxWorkersDefault       = 1
 	ansibleVerbosityDefault = 2
 )
-
+//
 // UnmarshalYAML - implements the yaml.Unmarshaler interface for Watch.
 // This makes it possible to verify, when loading, that the GroupVersionKind
 // specified for a given watch is valid as well as provide sensible defaults
@@ -87,19 +87,19 @@ var (
 func (w *Watch) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Use an alias struct to handle complex types
 	type alias struct {
-		Group                       string                    `yaml:"group"`
-		Version                     string                    `yaml:"version"`
-		Kind                        string                    `yaml:"kind"`
-		Playbook                    string                    `yaml:"playbook"`
-		Role                        string                    `yaml:"role"`
-		Vars                        map[string]interface{}    `yaml:"vars"`
-		MaxRunnerArtifacts          int                       `yaml:"maxRunnerArtifacts"`
-		ReconcilePeriod             string                    `yaml:"reconcilePeriod"`
-		ManageStatus                bool                      `yaml:"manageStatus"`
-		WatchDependentResources     bool                      `yaml:"watchDependentResources"`
-		WatchClusterScopedResources bool                      `yaml:"watchClusterScopedResources"`
-		Blacklist                   []schema.GroupVersionKind `yaml:"blacklist"`
-		Finalizer                   *Finalizer                `yaml:"finalizer"`
+		Group                       string                    `json:"group"`
+		Version                     string                    `json:"version"`
+		Kind                        string                    `json:"kind"`
+		Playbook                    string                    `json:"playbook"`
+		Role                        string                    `json:"role"`
+		Vars                        map[string]interface{}    `json:"vars"`
+		MaxRunnerArtifacts          int                       `json:"maxRunnerArtifacts"`
+		ReconcilePeriod             *metav1.Duration          `json:"reconcilePeriod"`
+		ManageStatus                bool                      `json:"manageStatus"`
+		WatchDependentResources     bool                      `json:"watchDependentResources"`
+		WatchClusterScopedResources bool                      `json:"watchClusterScopedResources"`
+		Blacklist                   []schema.GroupVersionKind `json:"blacklist"`
+		Finalizer                   *Finalizer                `json:"finalizer"`
 	}
 	var tmp alias
 
@@ -108,7 +108,7 @@ func (w *Watch) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// the operator will not manage cluster scoped resources by default.
 	tmp.WatchDependentResources = watchDependentResourcesDefault
 	tmp.MaxRunnerArtifacts = maxRunnerArtifactsDefault
-	tmp.ReconcilePeriod = reconcilePeriodDefault
+	tmp.ReconcilePeriod = &reconcilePeriodDefault
 	tmp.WatchClusterScopedResources = watchClusterScopedResourcesDefault
 	tmp.Blacklist = blacklistDefault
 
@@ -116,17 +116,12 @@ func (w *Watch) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	reconcilePeriod, err := time.ParseDuration(tmp.ReconcilePeriod)
-	if err != nil {
-		return fmt.Errorf("failed to parse '%s' to time.Duration: %w", tmp.ReconcilePeriod, err)
-	}
-
 	gvk := schema.GroupVersionKind{
 		Group:   tmp.Group,
 		Version: tmp.Version,
 		Kind:    tmp.Kind,
 	}
-	err = verifyGVK(gvk)
+	err := verifyGVK(gvk)
 	if err != nil {
 		return fmt.Errorf("invalid GVK: %s: %w", gvk, err)
 	}
@@ -138,7 +133,7 @@ func (w *Watch) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	w.Vars = tmp.Vars
 	w.MaxRunnerArtifacts = tmp.MaxRunnerArtifacts
 	w.MaxWorkers = getMaxWorkers(gvk, maxWorkersDefault)
-	w.ReconcilePeriod = reconcilePeriod
+	w.ReconcilePeriod = tmp.ReconcilePeriod
 	w.ManageStatus = tmp.ManageStatus
 	w.WatchDependentResources = tmp.WatchDependentResources
 	w.WatchClusterScopedResources = tmp.WatchClusterScopedResources
@@ -255,7 +250,6 @@ func (w *Watch) Validate() error {
 
 // New - returns a Watch with sensible defaults.
 func New(gvk schema.GroupVersionKind, role, playbook string, vars map[string]interface{}, finalizer *Finalizer) *Watch {
-	reconcilePeriod, _ := time.ParseDuration(reconcilePeriodDefault)
 	return &Watch{
 		Blacklist:                   blacklistDefault,
 		GroupVersionKind:            gvk,
@@ -264,7 +258,7 @@ func New(gvk schema.GroupVersionKind, role, playbook string, vars map[string]int
 		Vars:                        vars,
 		MaxRunnerArtifacts:          maxRunnerArtifactsDefault,
 		MaxWorkers:                  maxWorkersDefault,
-		ReconcilePeriod:             reconcilePeriod,
+		ReconcilePeriod:             &reconcilePeriodDefault,
 		ManageStatus:                manageStatusDefault,
 		WatchDependentResources:     watchDependentResourcesDefault,
 		WatchClusterScopedResources: watchClusterScopedResourcesDefault,
