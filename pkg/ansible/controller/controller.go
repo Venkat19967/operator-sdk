@@ -16,13 +16,11 @@ package controller
 
 import (
 	"fmt"
-	"os"
-	"strings"
-	"time"
-
 	"github.com/operator-framework/operator-sdk/pkg/ansible/events"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner"
 	"github.com/operator-framework/operator-sdk/pkg/predicate"
+	"os"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -43,7 +41,7 @@ type Options struct {
 	LoggingLevel                events.LogLevel
 	Runner                      runner.Runner
 	GVK                         schema.GroupVersionKind
-	ReconcilePeriod             time.Duration
+	ReconcilePeriod             metav1.Duration
 	ManageStatus                bool
 	AnsibleDebugLogs            bool
 	WatchDependentResources     bool

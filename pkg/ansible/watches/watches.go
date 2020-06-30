@@ -47,7 +47,7 @@ type Watch struct {
 	Role                        string                    `json:"role"`
 	Vars                        map[string]interface{}    `json:"vars"`
 	MaxRunnerArtifacts          int                       `json:"maxRunnerArtifacts"`
-	ReconcilePeriod             *metav1.Duration          `json:"reconcilePeriod,omitempty"`
+	ReconcilePeriod             metav1.Duration           `json:"reconcilePeriod"`
 	Finalizer                   *Finalizer                `json:"finalizer"`
 	ManageStatus                bool                      `json:"manageStatus"`
 	WatchDependentResources     bool                      `json:"watchDependentResources"`
@@ -89,7 +89,7 @@ type alias struct {
 	Role                        string                    `json:"role"`
 	Vars                        map[string]interface{}    `json:"vars"`
 	MaxRunnerArtifacts          int                       `json:"maxRunnerArtifacts"`
-	ReconcilePeriod             *metav1.Duration          `json:"reconcilePeriod"`
+	ReconcilePeriod             metav1.Duration          `json:"reconcilePeriod"`
 	ManageStatus                bool                      `json:"manageStatus"`
 	WatchDependentResources     bool                      `json:"watchDependentResources"`
 	WatchClusterScopedResources bool                      `json:"watchClusterScopedResources"`
@@ -99,17 +99,15 @@ type alias struct {
 
 
 // todo; just to test required cleanup
-// buildWatch will build Watch based on the values parsed from alias
-func buildWatch(tmp alias) (Watch, error) {
-	w := Watch{}
-	// by default, the operator will manage status and watch dependent resources
-	tmp.ManageStatus = manageStatusDefault
-	// the operator will not manage cluster scoped resources by default.
-	tmp.WatchDependentResources = watchDependentResourcesDefault
-	tmp.MaxRunnerArtifacts = maxRunnerArtifactsDefault
-	tmp.ReconcilePeriod = &reconcilePeriodDefault
-	tmp.WatchClusterScopedResources = watchClusterScopedResourcesDefault
-	tmp.Blacklist = blacklistDefault
+// newWatchByAlias will build Watch based on the values parsed from alias
+func newWatchByAlias(tmp alias) (Watch, error) {
+	//// by default, the operator will manage status and watch dependent resources
+	//tmp.ManageStatus = manageStatusDefault
+	//// the operator will not manage cluster scoped resources by default.
+	//tmp.WatchDependentResources = watchDependentResourcesDefault
+	//tmp.MaxRunnerArtifacts = maxRunnerArtifactsDefault
+	//tmp.WatchClusterScopedResources = watchClusterScopedResourcesDefault
+	//tmp.Blacklist = blacklistDefault
 
 	gvk := schema.GroupVersionKind{
 		Group:   tmp.Group,
@@ -118,26 +116,24 @@ func buildWatch(tmp alias) (Watch, error) {
 	}
 	err := verifyGVK(gvk)
 	if err != nil {
-		return w, fmt.Errorf("invalid GVK: %s: %w", gvk, err)
+		return Watch{}, fmt.Errorf("invalid GVK: %s: %w", gvk, err)
 	}
+
+	w := New(gvk, tmp.Role, tmp.Playbook, tmp.Vars, tmp.Finalizer)
 
 	// Rewrite values to struct being unmarshalled
 	w.GroupVersionKind = gvk
-	w.Playbook = tmp.Playbook
-	w.Role = tmp.Role
-	w.Vars = tmp.Vars
 	w.MaxRunnerArtifacts = tmp.MaxRunnerArtifacts
 	w.MaxWorkers = getMaxWorkers(gvk, maxWorkersDefault)
 	w.ReconcilePeriod = tmp.ReconcilePeriod
 	w.ManageStatus = tmp.ManageStatus
 	w.WatchDependentResources = tmp.WatchDependentResources
 	w.WatchClusterScopedResources = tmp.WatchClusterScopedResources
-	w.Finalizer = tmp.Finalizer
 	w.AnsibleVerbosity = getAnsibleVerbosity(gvk, ansibleVerbosityDefault)
 	w.Blacklist = tmp.Blacklist
 	w.addRolePlaybookPaths()
 
-	return w, nil
+	return *w, nil
 }
 
 // addRolePlaybookPaths will add the full path based on the current dir
@@ -253,7 +249,7 @@ func New(gvk schema.GroupVersionKind, role, playbook string, vars map[string]int
 		Vars:                        vars,
 		MaxRunnerArtifacts:          maxRunnerArtifactsDefault,
 		MaxWorkers:                  maxWorkersDefault,
-		ReconcilePeriod:             &reconcilePeriodDefault,
+		ReconcilePeriod:             reconcilePeriodDefault,
 		ManageStatus:                manageStatusDefault,
 		WatchDependentResources:     watchDependentResourcesDefault,
 		WatchClusterScopedResources: watchClusterScopedResourcesDefault,
@@ -281,7 +277,7 @@ func Load(path string, maxWorkers, ansibleVerbosity int) ([]Watch, error) {
 
 	watches := []Watch{}
 	for _, a := range alias {
-		w, _ := buildWatch(a)
+		w, _ := newWatchByAlias(a)
 		watches = append(watches, w)
 	}
 
